@@ -1,0 +1,2225 @@
+package maModel; import acemap.*;
+
+import java.io.*;
+import aceStyle.*;
+import java.util.*;
+import javax.swing.JFileChooser;
+import acemapCore.*;
+
+class NDp{
+	double f;
+	double m;
+	double s;
+	
+	NDp(){
+		f = 0.0;
+		m = 0.0;
+		s = 0.0;	
+	}
+	NDp(NDp ndp){
+		f = ndp.f;
+		m = ndp.m;
+		s = ndp.s;	
+	}
+	NDp(double f, double m, double s){
+		this.f=f;
+		this.m=m;
+		this.s=s;
+	}
+	
+	void div(double w){
+		if(w==0.0) return;
+		f/=w;
+		m/=w;
+		s/=w;	
+	}
+}
+class NDmix{
+	
+	NDmix(double dat[]){
+		this.dat = dat;
+		
+		ndp = new NDp[2];
+		ndp[0] = new NDp(0.5, -0.1, 1.0);
+		ndp[1] = new NDp(0.5,  0.1, 1.0);
+	}
+	
+	NDmix(mTable mTab){
+		dat = new double[mTab.size];
+		for(int i=0; i<dat.length; i++)
+			dat[i] = Math.log(mTab.data[i].signal);
+	}
+	
+	public void		setParameters(NDp[] ndp){
+		this.ndp = ndp;
+	}
+	
+	private NDp		ndp[];
+	private double	dat[];
+	private	double	logL;
+	
+	private double	SQR(double x){
+		return x*x;
+	}
+	
+	private double	Pi(int k, double x){
+		return ndp[k].f * utils.normDist(x, ndp[k].m, ndp[k].s);
+	}
+	private double	Pt(double x){
+		double res=0.0;
+		
+		for(int i=0; i<ndp.length; i++){
+			res += Pi(i, x);
+		}
+			
+		return res;	
+	}
+	
+	// calculates the log likelihood of the current mixed distribution, given data dat
+	public	double	L(){
+		
+		double res = 0.0;
+		
+		for(int i=0; i<dat.length; i++)
+			res += Math.log(Pt(dat[i]));
+		return res;
+	}
+	
+	public double	L(NDp[] ndpM){
+		NDp[] temp = ndp;
+		ndp = ndpM;
+		
+		double res = L();
+		
+		ndp = temp;	
+		
+		return res;
+	}
+	
+	
+	
+	public	void	EM(){
+		double ws[] = new double[ndp.length];
+		
+		double w;
+		double PTot;
+		
+		double div = (double)(dat.length);
+		
+		
+		NDp ndpNew[] = new NDp[ndp.length]; 
+						
+		for(int i=0; i<ws.length; i++){
+			// initialize weight sums
+			ws[i] = 0.0;
+			// initialize new parameter vector
+			ndpNew[i] = new NDp();
+		}
+
+				
+		for(int i=0; i<dat.length; i++){
+			// calculate function sum for data point i
+			PTot = Pt(dat[i]);
+			
+			for(int j=0; j<ndpNew.length; j++){
+				w = Pi(j, dat[i]) / PTot ;
+				//   ndp[j].f /
+				
+				
+				if(w>1.0)	System.out.println("pT="+Pt(dat[i])+", p1="+Pi(0, dat[i])+", p2="+Pi(1, dat[i])+", w="+w );
+								
+				ws[j] += w;
+								
+				ndpNew[j].f += w;
+				
+				ndpNew[j].m += w*dat[i] ; 
+				ndpNew[j].s += w*SQR(dat[i]-ndp[j].m);
+			
+			
+			}
+			
+		}
+		
+		for(int i=0; i<ndpNew.length; i++){
+			ndpNew[i].m/=ws[i];
+			ndpNew[i].s/=ws[i];
+			ndpNew[i].f/=div;
+		
+			ndpNew[i].s = Math.sqrt(ndpNew[i].s);		
+		}
+		
+		
+		
+		
+		ndp = ndpNew;
+		
+	}
+	
+	public	double	EMlike(){
+		EM();
+		double like = L();
+		
+		
+		System.out.println("D1 ("+utils.getDecs(ndp[0].f, 3, false)+"; "
+								 +utils.getDecs(ndp[0].m, 3, false)+", "
+								 +utils.getDecs(ndp[0].s, 3, false)
+					   +"), D2 ("+utils.getDecs(ndp[1].f, 3, false)+"; "
+					             +utils.getDecs(ndp[1].m, 3, false)+", "
+					             +utils.getDecs(ndp[1].s, 3, false)
+					     +"), L="+utils.getDecs(like,     3, false) );
+		
+		
+		
+		
+		return like;
+	}
+	
+	public	void run(){
+		ndp    = new NDp[2];
+		ndp[0] = new NDp(0.5, -1.0, 1.0);
+		ndp[1] = new NDp(0.5,  1.0, 1.0);
+				
+		double conv = 0.000001;
+		int maxiter = 150;
+		
+		int    iter = 0;
+		double like = -1000000000.0;
+		double lastlike;
+		
+		do{
+			lastlike = like;
+			like = EMlike();
+			System.out.println("step "+iter+": L="+utils.getDecs(like, 3, false));
+			iter++;
+			
+		}while(iter<maxiter && like-lastlike>conv); 
+				
+		
+	}
+	
+	
+	public	NDp[]	getParams(){
+		return ndp;
+	}
+}
+
+
+
+class LNDp{
+	double f, m, s, x0;
+	double logm;
+	
+	private final double sqrt2pi = 2.506628274631;
+	
+	private double SQR(double x) {return x*x;}
+	
+	
+	LNDp(){
+		f = 0.5;
+		m = 1.0;
+		s = 1.0;	
+		x0= 0.0;
+	}
+	LNDp(double f, double m, double s, double x0){
+		this.f = f;
+		this.m = m;
+		this.s = s;
+		this.x0= x0;
+		logm = Math.log(m);
+	}
+	
+	double p(double x){
+		if(x<=x0)
+			return 0.0;
+		else
+			return f / ((x-x0)*sqrt2pi*s) * Math.exp( -SQR(Math.log((x-x0)/m))/(2.0*s*s)); 	
+	}
+	
+	double log(double x){
+		if(x<=x0) 
+			return 0.0;
+		else
+			return Math.log(x-x0);
+	}
+}
+class LNDmix{
+	
+	private double ABS(double x){ return x<0.0?-x:x; }
+
+	private LNDp	lndp[];
+	
+	private double	dat[];
+	private double	logdat[][];
+	
+	private	double	logL;
+	
+	private mTable	mTab;
+	
+	LNDmix(mTable mTab){
+		this.mTab = mTab;
+		dat = new double[mTab.size];
+		for(int i=0; i<dat.length; i++)
+			dat[i] = (double)mTab.data[i].signal;
+				
+		lndp    = new LNDp[2];
+		//lndp[0] = new LNDp(0.5, 0.0, 1.0, 0.0);
+		//lndp[1] = new LNDp(0.5, 0.0, 1.0, 1.0);
+	}
+	
+	public void		setParameters(LNDp[] lndp){
+		this.lndp = lndp;
+	}
+	private double	SQR(double x){
+		return x*x;
+	}
+	/// k: index of distribution, index: index of data item
+	private double	Pi(int k, int index){
+		LNDp l = lndp[k];
+		
+		if(dat[index]<=l.x0)
+			return 0.0;
+		else
+			return l.f / ((dat[index] - l.x0)*utils.sqrt2pi*l.s) * Math.exp( -SQR( logdat[k][index] - l.logm)/(2.0*SQR(l.s)));
+			
+		
+		//return lndp[k].p(x);
+	}
+	private double	Pt(int index){
+		double res = 0.0;
+		
+		for(int j=0; j<lndp.length; j++){
+			res += Pi(j, index);
+		}
+			
+		return res;	
+	}
+	
+	// calculates the log likelihood of the current mixed distribution, given data dat
+	public	double	L(){
+		
+		double res = 0.0;
+		for(int i=0; i<dat.length; i++)
+			res += Math.log( Pt(i) );
+		
+		return res;
+	}
+	public double	L(LNDp[] lndpM){
+		LNDp[] temp = lndp;
+		lndp = lndpM;
+		
+		logdat  = new double[lndp.length][dat.length];
+		
+		
+		
+		for(int j=0; j<lndp.length; j++){
+			
+			for(int i=0; i<dat.length; i++){
+				if(dat[i]>lndp[j].x0)
+					logdat[j][i] = Math.log( dat[i]-lndp[j].x0 );
+				else	
+					logdat[j][i] = 0.0;
+			}
+		}
+		
+		
+		
+		double res = L();
+		
+		lndp = temp;	
+		
+		return res;
+	}
+	
+	private void dataOut(){
+		System.out.println("D1 ("+utils.getDecs(lndp[0].f , 3, false)+"; "
+								 +utils.getDecs(lndp[0].m , 3, false)+", "
+								 +utils.getDecs(lndp[0].s , 3, false)+", "
+								 +utils.getDecs(lndp[0].x0, 3, false)
+					   +"), D2 ("+utils.getDecs(lndp[1].f , 3, false)+"; "
+					             +utils.getDecs(lndp[1].m , 3, false)+", "
+					             +utils.getDecs(lndp[1].s , 3, false)+", "
+					             +utils.getDecs(lndp[1].x0, 3, false)+")" );
+	}
+	
+	
+	
+	// iterates parameters, using old mean to estimate the variance
+	public	void	EM(){
+		double ws[]      = new double[lndp.length];  // weights
+		double m[]       = new double[lndp.length];  // means
+		double p[]       = new double[lndp.length];  // probabilities
+		
+		LNDp   lndpNew[] = new LNDp[  lndp.length]; 
+		
+		double w;
+		double pTot;
+		double div  = (double)(dat.length);
+				
+		
+		// initialization				
+		for(int i=0; i<ws.length; i++){
+			// initialize weight sums
+			ws[i] = 0.0;
+			m[ i] = 0.0;
+			// initialize new parameter vector
+			lndpNew[i]    = new LNDp();
+			lndpNew[i].x0 = lndp[i].x0;
+			lndpNew[i].s  = 0.0;
+			lndpNew[i].f  = 0.0;
+		}
+		
+		for(int i=0; i<dat.length; i++){
+			pTot = 0.0;
+			// calculate probabilities of all involved distributions
+			for(int j=0; j<lndp.length; j++){
+				p[j] = Pi(j, i);
+				pTot +=p[j];
+			}
+			
+			// accumulate
+			for(int j=0; j<lndpNew.length; j++){
+				// current weight
+				w = p[j] / pTot;
+						
+				// advance weight accumulator
+				ws[j] += w;
+										
+				// add to mean accumulator: if x>x0 then ln(x-x0), 0 otherwise		
+				m[j]  += w * logdat[j][i];        //lndp[j].log(dat[i]);
+			}
+		}
+		
+		for(int j=0; j<lndp.length; j++){
+			m[j]  = m[j]/ws[j];
+			ws[j] = 0.0;
+		}
+			
+		
+		for(int i=0; i<dat.length; i++){
+			pTot = 0.0;
+			// calculate probabilities of all involved distributions
+			for(int j=0; j<lndp.length; j++){
+				p[j] = Pi(j, i);
+				pTot +=p[j];
+			}
+			
+			// accumulate
+			for(int j=0; j<lndpNew.length; j++){
+				// current weight
+				w = p[j] / pTot;
+						
+				// advance weight accumulator
+				ws[j]        += w;
+				
+				// advance multiplicator				
+				lndpNew[j].f += w;
+				
+				// advance variance estimate; use new mean estimate
+				lndpNew[j].s += w * SQR( logdat[j][i] - m[j] );        //lndp[j].log(dat[i]) - m[j] );
+								
+			}
+		}
+		
+		
+		// transform mean
+		for(int j=0; j<lndp.length; j++){	
+			lndpNew[j].logm = m[j];
+			lndpNew[j].m    = Math.exp( m[j] );
+		
+			lndpNew[j].s    = Math.sqrt( lndpNew[j].s / ws[j]);
+			lndpNew[j].f    = lndpNew[j].f / div;
+		
+		}	
+		
+		// replace old by new parameters			
+		lndp = lndpNew;
+		
+	}
+	
+	public	double	EMlike(){
+		EM();
+		double like = L();
+		
+		
+		//dataOut();
+		
+		
+		
+		
+		return like;
+	}
+	
+	public	void	run(){
+		double x0start = utils.getNumber("enter x0");
+		
+		lndp[0] = new LNDp(0.5, 0.2, 1.0, 0.0     );
+		lndp[1] = new LNDp(0.5, 2.0, 1.0, x0start );
+				
+		double conv = 0.000001;
+		int maxiter = 150;
+		
+		int    iter = 0;
+		double like = -1000000.0;
+		double lastlike;
+		
+		do{
+			lastlike = like;
+			like = EMlike();
+			System.out.println("step "+iter+": L="+utils.getDecs(like, 3, false));
+			iter++;
+			
+		}while(iter<maxiter && like-lastlike>conv); 
+		
+		
+		if(utils.request("once more?", "yes", "no"))
+			run();
+		
+		
+	}
+	
+	public	double	run(double x0start, double convmax){
+			
+		lndp[0] = new LNDp(0.5, 0.2, 1.0, 0.0     );
+		lndp[1] = new LNDp(0.5, 2.0, 1.0, x0start );
+		
+		logdat  = new double[lndp.length][dat.length];
+		
+		for(int j=0; j<lndp.length; j++){
+			
+			for(int i=0; i<dat.length; i++){
+				if(dat[i]>lndp[j].x0)
+					logdat[j][i] = Math.log( dat[i]-lndp[j].x0 );
+				else	
+					logdat[j][i] = 0.0;
+			}
+		}
+		
+				
+		int maxiter = 150;
+		
+		int    iter = 0;
+		double like = -100000000.0;
+		double lastlike;
+		
+		do{
+			lastlike = like;
+			like = EMlike();
+			System.out.println("step "+iter+": L="+utils.getDecs(like, 3, false));
+			iter++;
+			
+		}while(iter<maxiter && like-lastlike>convmax); 
+		
+		System.out.println("EM converged. logL= "+utils.getDecs(like, 3, false)+" model:");
+		dataOut();
+		
+		
+		return like;
+	}
+	
+	public	void	optimize(File logdir){
+		FileWriter fwr=null;
+		
+		String nameO = mTab.cmf.getFilename();
+		
+		File log = new File(logdir, nameO.substring(0, nameO.length()-4)+"_log.txt");
+		
+		if(log!=null){
+			try{
+				fwr = new FileWriter(log);
+				fwr.write("D1_x0\tD1_w\tD1_m\tD1_v\tD2_x0\tD2_w\tD2_m\tD2_v\tlogL"+utils.lineend);
+			}catch(Exception ex){}
+		}
+		
+		int crseLen     = 50;
+		int fineLen     = 10;
+			
+		double crseStep = 0.02;
+			
+		double crseL[]  = new double[crseLen];
+		double fineL[]  = new double[fineLen];
+		
+		int    iMax;
+		double lMax;
+		
+		for(int i=0; i<crseLen; i++){
+			crseL[i] = run(crseStep * (double)i, 0.01);
+			if(log!=null){
+				try{
+					fwr.write(	utils.getDecs( lndp[0].x0, 3, false)+"\t"+
+								utils.getDecs( lndp[0].f , 3, false)+"\t"+
+								utils.getDecs( lndp[0].m , 3, false)+"\t"+
+								utils.getDecs( lndp[0].s , 3, false)+"\t"+
+								utils.getDecs( lndp[1].x0, 3, false)+"\t"+
+								utils.getDecs( lndp[1].f , 3, false)+"\t"+
+								utils.getDecs( lndp[1].m , 3, false)+"\t"+
+								utils.getDecs( lndp[1].s , 3, false)+"\t"+
+								utils.getDecs( crseL[i]  , 3, false)+utils.lineend );
+				}catch(Exception excp){}
+			}
+		}
+		
+		if(log!=null){
+			try{
+				fwr.close();
+			}catch(Exception ex2){System.out.println("ii");}
+			
+		}
+		
+		
+		
+		
+		
+		
+		iMax = 0;
+		lMax = crseL[0];
+		
+		for(int i=1; i<crseLen; i++){
+			if(crseL[i]>lMax){
+				lMax = crseL[i];
+				iMax = i;
+			}
+		}
+		
+			
+		double fineSta  = (double)(iMax-1) * crseStep;
+		double fineStep = crseStep*2.0 / (double)fineLen;
+		
+		for(int i=0; i<fineLen; i++){
+			fineL[i] = run(fineSta + fineStep*(double)i, 0.001);
+			if(log!=null){
+				try{
+					fwr.write(	utils.getDecs( lndp[0].x0, 3, false)+"\t"+
+								utils.getDecs( lndp[0].f , 3, false)+"\t"+
+								utils.getDecs( lndp[0].m , 3, false)+"\t"+
+								utils.getDecs( lndp[0].s , 3, false)+"\t"+
+								utils.getDecs( lndp[1].x0, 3, false)+"\t"+
+								utils.getDecs( lndp[1].f , 3, false)+"\t"+
+								utils.getDecs( lndp[1].m , 3, false)+"\t"+
+								utils.getDecs( lndp[1].s , 3, false)+"\t"+
+								utils.getDecs( fineL[i]  , 3, false)+utils.lineend );
+				}catch(Exception excp){}
+			}
+		}	
+		iMax = 0;
+		lMax = fineL[0];
+		
+		
+		
+		
+		for(int i=1; i<fineLen; i++){
+			if(fineL[i]>lMax){
+				lMax = fineL[i];
+				iMax = i;
+			}
+		}
+		
+		// keep best parameters
+		run(fineSta + fineStep*(double)iMax, 0.00001);
+		
+		System.out.println(">>>>>>>>>>>> FINAL MODEL:");
+		dataOut();
+		
+		// maximum likelihood at fineL[iMax]
+		
+		if(log!=null){
+			try{
+				fwr.close();
+			}catch(Exception ex2){}
+		}
+		
+		
+		File fin = mTab.cmf.F_txt;
+		File fout = ace_util.getTemp();
+		
+		String inset = new String("SIGNAL_DISTRIBUTION"	+"\t"+utils.getDecs(lndp[0].f , 3, false)
+														+"\t"+utils.getDecs(lndp[0].m , 3, false)
+														+"\t"+utils.getDecs(lndp[0].s , 3, false)
+														+"\t"+utils.getDecs(lndp[0].x0, 3, false)
+														+"\t"+utils.getDecs(lndp[1].f , 3, false)
+														+"\t"+utils.getDecs(lndp[1].m , 3, false)
+														+"\t"+utils.getDecs(lndp[1].s , 3, false)
+														+"\t"+utils.getDecs(lndp[1].x0, 3, false) 
+														+"\t"+utils.getDecs(lMax,       3, false)  );
+		utils.insertBehind(fin, fout, "MIXTURE_D_MODEL", inset);												
+		
+		mTab.cmf.F_txt = fout;
+		mTab.cmf.save();
+		
+		
+	} 
+	
+	
+	public	LNDp[]	getParams(){
+		return lndp;
+	}
+}
+/*
+class varD{
+	
+	private	mTable	mTab;
+	private	LNDp[]	sigmod;
+	
+	private double	D1_m, D1_v;
+	
+	private	double	D2_off, D2_scl;
+	
+	private double	sig[], logsig[], logvar[], loffvar[];
+	
+	private final	double vOff1 = 0.33;
+		
+	private double	SQR(double x){ return x*x; }
+	
+	public varD(mTable mTab, LNDp[] sigmod){
+		this.mTab   = mTab;
+		this.sigmod = sigmod;
+		
+		mTab.sortBySignal();	
+		
+		sig     = new double[mTab.size];
+		logsig  = new double[mTab.size];
+		logvar  = new double[mTab.size];
+		loffvar = new double[mTab.size];
+		
+		for(int i=0; i<mTab.size; i++){
+			sig[i]    = mTab.data[i].signal;
+			logsig[i] = Math.log( mTab.data[i].signal );
+			logvar[i] = Math.log( mTab.data[i].moq    );
+			if(mTab.data[i].moq <= vOff1)
+				loffvar[i] = 0.0;
+			else
+				loffvar[i] = Math.log( mTab.data[i].moq - vOff1 );
+		}
+		double w, p1, p2, ws, acc;
+				
+		// calculate mean for first distribution
+		ws  = 0.0; acc = 0.0;
+		for(int i=0; i<logsig.length; i++){
+			p1 = lndp[0].p( sig[i] );
+			p2 = lndp[1].p( sig[i] );
+		
+			w = p1/(p1+p2);
+			
+			acc += w * loffvar[i];
+			ws  += w;
+		}
+		D1_m = acc / ws;
+		
+		// calculate variance for first distribution
+		ws = 0.0; acc = 0.0;
+		for(int i=0; i<logsig.length; i++){
+			p1 = lndp[0].p( sig[i] );
+			p2 = lndp[1].p( sig[i] );
+		
+			w = p1/(p1+p2);
+			
+			acc += w * SQR(loffvar[i] - D1_m);
+			ws  += w;
+		}
+		D1_v = Math.sqrt( acc / ws );
+		
+		// calculate offset for second distribution mean
+		ws = 0.0; acc = 0.0;
+		int crs;
+		while(logsig[crs] < 4) crs++; // skip all signals of log less than 4 -- data are sorted asc. by signal
+		for(int i=crs; i<logvar.length; i++)
+			acc += logvar[i];
+		
+		D2_off = acc / (double)(logvar.length - crs);
+		
+		
+		
+		
+		
+	}
+
+
+	
+}
+*/
+
+
+/*
+ 	lndm.optimize(logdir);
+				like = lndm.L();     
+				lndp = lndm.getParams();
+				
+				an_in  = tbuf.cmf.F_txt;
+				an_out = ace_util.getTemp();
+				
+				spar = new String(	      utils.getDecs(lndp[0].f , 4, false)
+									+"\t"+utils.getDecs(lndp[0].m , 4, false)
+									+"\t"+utils.getDecs(lndp[0].s , 4, false)
+									+"\t"+utils.getDecs(lndp[0].x0, 4, false)
+									+"\t"+utils.getDecs(lndp[1].f , 4, false)
+									+"\t"+utils.getDecs(lndp[1].m , 4, false)
+									+"\t"+utils.getDecs(lndp[1].s , 4, false)
+									+"\t"+utils.getDecs(lndp[1].x0, 4, false)
+									+"\t"+utils.getDecs(like      , 4, false) );
+						
+				
+				try{
+					
+					bbr = new bbReader(  an_in);
+					fwr = new FileWriter(an_out);
+					
+					do{
+						buff = bbr.getToNextRET();
+						fwr.write(buff+utils.lineend);
+					}while(!buff.startsWith("MIXTURE_D_MODEL") );
+					
+					fwr.write("SIGNAL_DISTRIBUTION\t"+spar+utils.lineend);
+					      
+					do{
+						buff = bbr.getToNextRET();
+						if(buff==null) break;
+						fwr.write(buff+utils.lineend);
+					}while(true);
+					
+					fwr.close();
+					bbr.close();
+					
+				}catch(Exception exc){System.out.println(exc.toString()); }
+				
+				tbuf.cmf.F_txt = an_out;
+				tbuf.cmf.save();			
+				
+				
+				// write to logfile
+				try{
+					fwrLog = new FileWriter(log, true);
+					fwrLog.write(tbuf.name	+"\t"+spar+utils.lineend);
+					fwrLog.close();
+				}catch(Exception e){}
+		
+ 
+ */
+ 
+ /*
+  
+  
+  buff = tbuf.info.kvm.valueFor("SIGNAL_DISTRIBUTION");
+				el   = utils.getElementArray(buff);
+				
+				lndp[0]= new LNDp(	utils.parseFast(el[0]),
+									utils.parseFast(el[1]),
+									utils.parseFast(el[2]),
+									utils.parseFast(el[3])  );
+				lndp[1]= new LNDp(	utils.parseFast(el[4]),
+									utils.parseFast(el[5]),
+									utils.parseFast(el[6]),
+									utils.parseFast(el[7])  ); 
+								
+				emvm   = new EMvarMod(lndp, tbuf);
+				emvm.run(0.001, 100, logdir);
+				
+				P_f_x0 = emvm.getP_f_x0();
+				P_f_var= emvm.getP_f_var();
+				modV1  = emvm.getVMod1();
+				
+				buff   = new String( "VAR_DISTRIBUTION1\t"    +utils.getDecs(modV1.f,    4, false)
+														 +"\t"+utils.getDecs(modV1.m,    4, false)
+														 +"\t"+utils.getDecs(modV1.s,    4, false)
+														 +"\t"+utils.getDecs(modV1.x0,   4, false)
+														      +utils.lineend
+									+"VAR_DISTRIBUTION2_x0\t" +utils.getDecs(P_f_x0[0],  6, false)
+														 +"\t"+utils.getDecs(P_f_x0[1],  6, false)
+														 +"\t"+utils.getDecs(P_f_x0[2],  6, false)
+														 +"\t"+utils.getDecs(P_f_x0[3],  6, false)
+														      +utils.lineend
+									+"VAR_DISTRIBUTION2_var\t"+utils.getDecs(P_f_var[0], 6, false)
+														 +"\t"+utils.getDecs(P_f_var[1], 6, false)
+														 +"\t"+utils.getDecs(P_f_var[2], 6, false)
+														 +"\t"+utils.getDecs(P_f_var[3], 6, false)  );
+				an_in  = tbuf.cmf.F_txt;
+				an_out = ace_util.getTemp();									
+				
+				utils.insertBehind(an_in, an_out, "SIGNAL_DISTRIBUTION", buff);		
+				tbuf.cmf.F_txt = an_out;
+				tbuf.cmf.save();
+  
+  
+  
+  */
+ 
+ 
+ 
+ 
+class PtoL{
+	PtoL(){}
+	
+	
+	public static void append(mTable mtab, File f){
+		String b1, b2, b3, b4, b5;
+		
+		
+		try{
+			FileWriter fwr = new FileWriter(f, true);
+			
+			b1 = mtab.info.kvm.valueFor("SIGNAL_DISTRIBUTION");
+			b2 = mtab.info.kvm.valueFor("VAR_BLEND");
+			b3 = mtab.info.kvm.valueFor("VAR_MODEL1");
+			b4 = mtab.info.kvm.valueFor("VAR_MODEL2_m");
+			b5 = mtab.info.kvm.valueFor("VAR_MODEL2_s");
+			
+			
+			
+			
+			fwr.write(mtab.name+"\t"+b1+"\t"+b2+"\t"+b3+"\t"+b4+"\t"+b5+utils.lineend);
+			
+			fwr.close();
+	
+		}catch(Exception e){System.out.println(e.toString()); }
+		
+		
+		
+		
+	}
+	
+	public static void main(String args[]){
+		ace_util.init(null);
+
+		
+		File dirin  = utils.getUserFile("set input directory", true);
+		
+		File fin[]  = dirin.listFiles();
+		
+		File dirout = utils.getUserFile("set output directory", true);
+				
+		FileWriter w1, w2, w3;
+		File l1, l2, l3;
+		
+		l1 = new File(dirout, "err_Fx0");
+		l2 = new File(dirout, "err_Fvar");
+		l3 = new File(dirout, "err_like");
+		
+		bbReader bbr;
+		String name, buff, el[];
+		
+		try{
+			
+			w1 = new FileWriter(l1);
+			w2 = new FileWriter(l2);
+			w3 = new FileWriter(l3);
+					
+			
+			for(int i=0; i<fin.length; i++){
+				if(fin[i].isDirectory()) continue;
+				
+				bbr  = new bbReader(fin[i]);
+				name = fin[i].getName();
+				name = name.substring(0, name.length()-8); 
+				
+				w1.write(name);
+				w2.write(name);
+				w3.write(name);
+				
+				// skip headline
+				bbr.getToNextRET();	
+								
+				while(true){
+					buff = bbr.getToNextRET();
+					if(buff==null) break;
+					el = utils.getElementArray(buff);
+					if(el==null || el.length!=3) break;
+					
+					w1.write("\t"+el[0]);
+					w2.write("\t"+el[1]);
+					w3.write("\t"+el[2]);
+				}
+				
+				w1.write(utils.lineend);
+				w2.write(utils.lineend);
+				w3.write(utils.lineend);
+				
+				bbr.close();
+			}
+			
+			w1.close();
+			w2.close();
+			w3.close();
+			
+			
+			
+			
+		}catch(Exception e){}
+
+		
+	}
+	
+	
+	
+	
+}
+
+
+
+class like{
+	like(){}
+	
+	public static void tab(mTable mTab, File log){
+		
+		LNDmix lndm = new LNDmix(mTab);
+		
+		LNDp   D1[] = new LNDp[1];
+		LNDp   D2[] = new LNDp[2];
+		LNDp   D3[] = new LNDp[2];
+		
+		double l1, l2, l3;
+		
+		key_value_map kvm = mTab.info.kvm;
+		String buff, el[];
+		
+		buff = kvm.valueFor("SINGLE_D_MODEL");
+		el   = utils.getElementArray(buff);
+		D1[0]= new LNDp(1.0,
+						Math.exp( utils.parseFast(el[0])),
+						utils.parseFast(el[1]),
+						0.0  );
+						
+		buff = kvm.valueFor("MIXTURE_D_MODEL");
+		el   = utils.getElementArray(buff);
+		D2[0]= new LNDp(utils.parseFast(el[0]),
+						Math.exp(utils.parseFast(el[1])),
+						utils.parseFast(el[2]),
+						0.0 );
+		D2[1]= new LNDp(utils.parseFast(el[3]),
+						Math.exp(utils.parseFast(el[4])),
+						utils.parseFast(el[5]),
+						0.0 );
+		
+		buff = kvm.valueFor("SIGNAL_DISTRIBUTION");
+		el   = utils.getElementArray(buff);
+		D3[0]= new LNDp(utils.parseFast(el[0]),
+						utils.parseFast(el[1]),
+						utils.parseFast(el[2]),
+						utils.parseFast(el[3])  );
+		D3[1]= new LNDp(utils.parseFast(el[4]),
+						utils.parseFast(el[5]),
+						utils.parseFast(el[6]),
+						utils.parseFast(el[7])  );
+						
+		l1   = lndm.L(D1);				
+		l2   = lndm.L(D2);				
+		l3   = lndm.L(D3);
+		
+		FileWriter fwr;
+		try{
+			fwr = new FileWriter(log, true);
+			fwr.write(mTab.name	+"\t"+utils.getDecs(l1, 3, false)
+								+"\t"+utils.getDecs(l2, 3, false)
+								+"\t"+utils.getDecs(l3, 3, false)
+								+utils.lineend );
+			fwr.close();
+		}catch(Exception e){System.out.println(e.toString());}				
+						
+		
+		
+	}
+	
+	
+	
+}
+
+class plot{
+	
+	plot(){}
+	
+	
+	public static double ABS(double x){
+		return x<0.0?-x:x;
+	}
+	
+	public static double[][]	sample(mTable mTab, double minlS, double maxlS, double minlV, double maxlV, int gran){
+		
+		double	bin[][] = new double[gran][gran];
+		double	v, s;
+		
+		double	facS = (double)(gran-1) / (maxlS - minlS);
+		double	facV = (double)(gran-1) / (maxlV - minlV);
+				
+		for(int i=0; i<gran; i++)
+			for(int j=0; j<gran; j++)
+				bin[i][j] = 0.0;
+				
+		for(int i=0; i<mTab.size; i++){
+			s = Math.log( mTab.data[i].signal );
+			v = Math.log( ABS(mTab.data[i].moq)    );
+			 if(s<minlS || s>maxlS || v<minlV || v>maxlV) continue;
+			 	bin[(int)( (s-minlS)*facS )][(int)( (v-minlV)*facV )  ]+=1.0;
+			 
+			
+		}
+		
+		double fac = 1.0 / (double)(mTab.size);
+		
+		for(int i=0; i<gran; i++)
+			for(int j=0; j<gran; j++)
+				bin[i][j] *= fac;
+		
+		
+		
+		return bin;
+		
+	}
+	
+	public static void writeBins(mTable mTab, File outdir){
+		double bins[][] = sample(mTab, -8.0, 8.0, -8.0, 8.0, 160);
+		
+		String name = mTab.name+"_surf.txt";
+		
+		
+		try{
+			FileWriter fwr = new FileWriter(new File(outdir, name));
+			
+			for(int i=0; i<bins.length; i++){
+				fwr.write(utils.getDecs(bins[i][0], 4, true));
+				for(int j=1; j<bins[i].length; j++)
+					fwr.write("\t"+utils.getDecs(bins[i][j], 4, true));
+				fwr.write(utils.lineend);
+				
+			}
+			
+			fwr.close();
+		}catch(Exception e){}
+		
+		
+		
+	} 
+	
+	
+	
+	
+}
+
+
+
+class lognorm{
+	
+	private	double	SQR(double x){
+		return x*x;
+	}
+	
+	
+	
+	lognorm(){}
+	
+	
+	private	double	SIGMIN = 0.00001;
+	
+	private	mTable	srcDat = null;
+	private	double	logDat[];
+	private boolean	invalid[];
+	
+	private	double	mju, sigma, gamma;
+	private	int		rej;
+	
+	
+	public	void	setFile(File f){
+		
+		composite_mf cmf = new composite_mf();
+		cmf.load(f, true, false, false);
+					
+		srcDat = new mTable (cmf.F_ma, null, false, null, false);
+		initBuffers();
+	}
+	public	void	setData(mTable mt){
+		srcDat = mt;	
+		initBuffers();
+	}
+	private	void	initBuffers(){
+		logDat  = new double[srcDat.size];
+		invalid = new boolean[srcDat.size];
+	}
+	
+	
+	public	void	calcLogDat(double gamma){
+		this.gamma = gamma;
+		rej=0;
+		
+		for(int i=0; i<srcDat.size; i++){
+			if(  (srcDat.data[i].signal-gamma) < SIGMIN ){
+				logDat[i]  = Math.log(SIGMIN);
+				invalid[i] = true;
+				rej++;
+			}
+			else{
+				logDat[i]  = Math.log(srcDat.data[i].signal-gamma);
+				invalid[i] = false;
+			}
+		}
+	}
+	
+	public	double[]	getLogData(){
+		return logDat;
+	}
+	
+	public	void	calcND(){
+		mju   = 0.0;	
+		sigma = 0.0;
+	
+		for(int i=0; i<logDat.length; i++)
+			if(!invalid[i])
+				mju+=logDat[i];
+					
+		mju /= ((double)(logDat.length-rej));
+		
+		for(int i=0; i<logDat.length; i++)
+			if(!invalid[i])
+				sigma += SQR(logDat[i]-mju);
+				
+			
+		sigma/= (double)(logDat.length-rej-1);
+		sigma = Math.sqrt(sigma);
+	
+		//System.out.println("for gamma="+gamma+" : N("+mju+" ; "+sigma+"), rej="+rej);
+	
+	}
+	
+	public	NDp		getNDparams(){
+		NDp ret = new NDp(1.0, mju, sigma);
+		return ret;
+	}
+	
+	private	double	logProb(int index){
+		double res = -Math.log(utils.sqrt2pi * sigma) -logDat[index] -SQR(logDat[index]-mju)/(2.0*sigma*sigma);		
+		return res;
+	}
+	
+	public	double	prob(double x){
+		if(x-gamma<=0.0)
+			return 0.0;
+		else
+			return 1.0/(utils.sqrt2pi*sigma*(x-gamma))*Math.exp(-SQR(Math.log(x-gamma)-mju)/(2.0*sigma*sigma)  );
+	}
+	
+	
+	public	double	likelihood(){
+		double res = 0;
+		
+		for(int i=0; i<logDat.length; i++)
+			if(!invalid[i])
+				res += logProb(i);
+		
+		return res/(double)(logDat.length-rej);
+	}
+	
+	
+	
+	
+	
+	public	void	run(mTable mt){
+		setData(mt);
+		
+		
+		calcLogDat(0.0);
+		
+		NDmix ndm = new NDmix(logDat);
+		
+		for(int i=0; i<100; i++)
+			ndm.EM();
+		
+		
+				
+		
+		
+		
+		try{
+			FileWriter fwr = new FileWriter(ace_util.getTemp());
+			
+			
+			calcLogDat(1.0);
+			calcND();
+			utils.qsortD(logDat);
+			
+			double res     = 0.5;
+			int    binsA[] = new int[1];
+			double off     = utils.histoBounds(logDat, res, 0.005, 0.995, binsA);
+			int    bins    = binsA[0];
+			
+			double arr[]   = utils.histo(logDat, off, res, bins);
+			
+			
+			
+			for(int i=0; i<bins; i++)
+				fwr.write("\t"+utils.getDecs(off+res*(0.5+(double)i), 3, false));
+			fwr.write(utils.lineend);
+			
+			
+			
+			
+			
+					
+			for(int i=0; i<20; i++){
+				calcLogDat(0.1*(double)i);
+				calcND();
+				utils.qsortD(logDat);
+						
+				arr  = utils.histo(logDat, off, res, bins);
+			
+				fwr.write("hist("+utils.getDecs(0.1*(double)i,3,false)+")");
+				for(int j=0; j<bins; j++)
+					fwr.write("\t"+utils.getDecs( arr[j] , 3, false));
+				fwr.write(utils.lineend);
+			
+			
+			
+				fwr.write("est("+utils.getDecs(0.1*(double)i,3,false)+")");
+				for(int j=0; j<bins; j++)
+					fwr.write("\t"+utils.getDecs(utils.normDist( off+res*(0.5+(double)j), mju, sigma) , 3, false));
+											
+				fwr.write(utils.lineend);
+			
+			
+			
+			}			
+						
+			
+			fwr.close();
+		}catch(Exception e){}
+			
+			
+			
+			
+			
+			
+		if(utils.request("Calculate likelihood manually?", "yes", "no")){
+			
+			NDp ndp[] = new NDp[2];
+			double f = utils.getNumber("Distribution 1\npart");
+			double m = utils.getNumber("Distribution 1\nmean");
+			double s = utils.getNumber("Distribution 1\nvariance");
+			ndp[0] = new NDp(f,m,s);
+			
+			f = utils.getNumber("Distribution 2\npart");
+			m = utils.getNumber("Distribution 2\nmean");
+			s = utils.getNumber("Distribution 2\nvariance");
+			ndp[1] = new NDp(f,m,s);
+			
+			
+			calcLogDat(0.0);
+			ndm = new NDmix(logDat);
+			
+			
+			System.out.println("manual estimation likelihood="+ndm.L(ndp));
+			
+			if(utils.request("Re-run EM?", "yes", "no")){
+				
+				ndm.setParameters(ndp);
+				for(int i=0; i<100; i++)
+				ndm.EM();
+			}
+		}
+			
+			
+			
+			
+	} 
+}
+
+class mad_synthesizer{
+	
+	mad_synthesizer(){
+		rng = new Random();
+		
+	}
+	
+	private Random rng;
+	
+	private	double	draw(double m, double s){
+		return m + s*rng.nextGaussian();	
+	}
+	private double	drawFromModel(){
+		double c   = rng.nextDouble();
+		
+		int    cur = 0;
+		
+		while(bord[cur] < c)	cur++;
+		if(cur>1){
+			System.out.println("c="+c);
+			cur = 1;
+		}
+			
+		return Math.exp(draw(param[cur].m, param[cur].s));
+	}
+	private NDp[]	param;
+	private	double	bord[];
+	private	mTable	dataReal, dataSynth;	
+
+
+	public	void	setRealData(mTable mTab){
+		dataReal = mTab;
+		
+		if(dataReal.info.kvm == null) return;
+		
+		String s = dataReal.info.kvm.valueFor("MIXTURE_D_MODEL");
+		if(s==null) return;
+		
+		//System.out.println("found this: "+s);
+		
+		String pa[] = utils.getElementArray(s);
+		
+		NDp p[]      = new NDp[2];
+		p[0] = new NDp();
+		p[1] = new NDp();
+		p[0].f = utils.parseFast(pa[0]);
+		p[0].m = utils.parseFast(pa[1]);
+		p[0].s = utils.parseFast(pa[2]);
+		p[1].f = utils.parseFast(pa[3]);
+		p[1].m = utils.parseFast(pa[4]);
+		p[1].s = utils.parseFast(pa[5]);
+		
+		setModel(p);
+		
+		System.out.println("parameters are set");	
+			
+	}
+	public	void	setModel(NDp par[]){
+		param   = par;
+		bord    = new double[par.length];
+		bord[0] = par[0].f;
+		for(int i=1; i<bord.length; i++)
+			bord[i] = bord[i-1]+par[i].f;
+			
+		bord[bord.length-1] = 1.0;	
+			
+		System.out.println("last bord="+bord[bord.length-1]);
+	}
+	public	mTable	create(){
+		int size = dataReal.size;
+		
+		dataSynth      = new mTable(size, 0);
+		dataSynth.tech = dataReal.tech;
+		double sig, var;
+		
+		
+		boolean low;
+		double  c;
+		int     cur;
+		double  varmean, varvar;
+		
+		
+		param[0] = new NDp(0.702,  0.658, 0.965);
+		param[1] = new NDp(0.298, 13.574, 3.326);
+		
+		
+		for(int i=0; i<size; i++){
+			//sig = (float) drawFromModel();
+			//var = (float) rng.nextDouble();
+			c   = rng.nextDouble();
+			cur = 0;
+		
+			while(bord[cur] < c)	cur++;
+			if(cur>1){
+				System.out.println("c="+c);
+				cur = 1;
+			}
+			low = cur==0;
+			sig = Math.exp(draw(param[cur].m, param[cur].s));
+			
+			if(!low) sig+=2.61;
+			
+			
+			if(low){
+				var = 0.34 + Math.exp(draw(0.0, 2.0));	
+				
+			}
+			else{
+				
+				varmean = -2.75 + 1.78*Math.exp(-Math.log(sig)*0.6913);
+				varvar  = 0.795 / sig;
+				
+				//varmean = 0.065 + 0.2/sig;
+				//varvar  = 0.0758/sig;
+				
+				var = Math.exp( draw(varmean, varvar));
+				
+				
+				//var     = draw(varmean, varvar); 
+				
+				
+			}
+								
+			
+			dataSynth.data[i].signal = (float)sig;
+			dataSynth.data[i].moq    = (float)var;
+		}
+		
+		dataReal.sortBySignal();
+		dataSynth.sortBySignal();
+		
+		for(int i=0; i<size; i++)
+			dataSynth.data[i].name = new String(dataReal.data[i].name);	
+		
+		return dataSynth;
+	}
+	public	mTable	createUsing(){
+		int size = dataReal.size;
+		
+		dataSynth      = new mTable(size, 0);
+		dataSynth.tech = dataReal.tech;
+		double sig, var;
+		
+				
+		boolean low;
+		double  c;
+		int     cur;
+		double  varmean, varvar;
+		
+		double x0[] = new double[2];
+		NDp par[] = new NDp[2]; 
+			
+		x0[0]  =			utils.getNumber("distribution 1:\nx0");
+		par[0] = new NDp(	utils.getNumber("distribution 1:\nweight"),
+							utils.getNumber("distribution 1:\nmean"),
+							utils.getNumber("distribution 1:\nvariance") );
+		x0[1]  = 		utils.getNumber("distribution 2:\nx0");
+		par[1] = new NDp(	utils.getNumber("distribution 2:\nweight"),
+							utils.getNumber("distribution 2:\nmean"),
+							utils.getNumber("distribution 2:\nvariance") );
+		
+		
+		setModel(par);
+		
+		
+		for(int i=0; i<size; i++){
+			c   = rng.nextDouble();
+			cur = 0;
+		
+			while(bord[cur] < c)	cur++;
+			if(cur>1){
+				System.out.println("c="+c);
+				cur = 1;
+			}
+			sig = x0[cur] + Math.exp(draw(param[cur].m, param[cur].s));
+			
+			var = 0.34 + Math.exp( draw(0.0, 1.0));
+			
+									
+			
+			dataSynth.data[i].signal = (float)sig;
+			dataSynth.data[i].moq    = (float)var;
+		}
+		
+		dataReal.sortBySignal();
+		dataSynth.sortBySignal();
+		
+		for(int i=0; i<size; i++)
+			dataSynth.data[i].name = new String(dataReal.data[i].name);	
+		
+		return dataSynth;
+	}
+	public	mTable	createUsing(LNDp p[]){
+		int size = dataReal.size;
+		
+		dataSynth      = new mTable(size, 0);
+		dataSynth.tech = dataReal.tech;
+		double sig, var;
+		
+				
+		boolean low;
+		double  c;
+		int     cur;
+		double  varmean, varvar;
+		
+		double x0[] = new double[2];
+		NDp par[] = new NDp[2]; 
+			
+		x0[0]  =			p[0].x0;
+		par[0] = new NDp(	p[0].f , Math.log(p[0].m) , p[0].s );
+		x0[1]  = 			p[1].x0;
+		par[1] = new NDp(	p[1].f , Math.log(p[1].m) , p[1].s );
+		
+		setModel(par);
+		
+		System.out.println("means : "+param[0].m+", "+param[1].m);
+		
+		
+		for(int i=0; i<size; i++){
+			c   = rng.nextDouble();
+			cur = 0;
+		
+			while(bord[cur] < c)	cur++;
+			if(cur>1){
+				System.out.println("c="+c);
+				cur = 1;
+			}
+			sig = x0[cur] + Math.exp(draw(param[cur].m, param[cur].s));
+			
+			var = 0.34 + Math.exp( draw(0.0, 1.0));
+			
+									
+			
+			dataSynth.data[i].signal = (float)sig;
+			dataSynth.data[i].moq    = (float)var;
+		}
+		
+		dataReal.sortBySignal();
+		dataSynth.sortBySignal();
+		
+		for(int i=0; i<size; i++)
+			dataSynth.data[i].name = new String(dataReal.data[i].name);	
+		
+		
+		
+		return dataSynth;
+	}
+	
+	public	boolean	saveMA0(){
+		
+		if(dataReal.cmf == null){
+			System.out.println("no information found in source file");
+			return false;
+		}
+		
+		composite_mf cmf = new composite_mf();
+		
+		cmf.F_ma     = ace_util.getTemp();
+		cmf.F_txt    = dataReal.cmf.F_txt;
+		
+		File fsave;
+		
+		dataSynth.saveAsMA0(cmf.F_ma);
+				
+		String dat   = utils.getCurrentTime()[0];
+		
+		cmf.name_ma  = ace_util.generateFileName(dat, "synth", dataSynth.tech, true);
+		cmf.name_txt = ace_util.generateFileName(dat, "synth", dataSynth.tech, false);
+		
+		JFileChooser chooser = new JFileChooser();
+		
+		if(JFileChooser.APPROVE_OPTION!=chooser.showOpenDialog(null)) return false;
+		
+		if(!chooser.getSelectedFile().getName().endsWith(".ma0")){
+			String s = chooser.getSelectedFile().getAbsolutePath()+"ma0";
+			fsave = new File(s);
+		}
+		else
+			fsave = chooser.getSelectedFile();
+		
+		cmf.saveTo(fsave);
+		return true;
+	}
+	
+	public	boolean	saveMA0(File dir){
+		if(dataReal.cmf == null){
+			System.out.println("no information found in source file");
+			return false;
+		}
+		
+		composite_mf cmf = new composite_mf();
+		
+		cmf.F_ma     = ace_util.getTemp();
+		cmf.F_txt    = dataReal.cmf.F_txt;
+		
+		File fsave;
+		
+		dataSynth.saveAsMA0(cmf.F_ma);
+				
+		String dat   = utils.getCurrentTime()[0];
+		
+		cmf.name_ma  = ace_util.generateFileName(dat, "synth", dataSynth.tech, true);
+		cmf.name_txt = ace_util.generateFileName(dat, "synth", dataSynth.tech, false);
+		
+		String nameO = dataReal.cmf.getFilename();
+		
+		fsave = new File(dir, nameO.substring(0, nameO.length()-4)+"_synth.ma0");
+		
+		cmf.saveTo(fsave);
+		return true;
+	}
+	
+	
+}
+
+class Mvar_estim{
+	
+	Mvar_estim(){}
+
+	private final double l  = 10.0;
+	private final double dM = 0.0001;
+	
+	public double lasterr;
+		
+
+	double	logSig[];
+	double	logVar[];
+	
+
+	static double SQR(double x){ return x*x; }
+	static double CUB(double x){ return x*x*x; }
+	static double ABS(double x){ return x<0.0?-x:x; }
+	static double exp(double x){ return Math.exp(x); }
+	
+
+
+	
+	public static boolean	GA_NEX = true;
+	
+	
+
+	private double err(double[] P){
+		double o    = P[0]; // y off
+		double r    = P[1];	// y range
+		double hoff = P[2]; // x shift
+		double y0   = P[3]; // connection point y value
+		double y0d  = P[4]; // slope at y0
+		
+		double c    = -y0d/y0;
+		
+		
+		double x0, k;
+			
+				
+		
+		if(GA_NEX){
+			// neonex new
+			x0 = 2.0*Math.log(y0)*y0 / y0d;
+			k    = Math.sqrt( -2.0*Math.log(y0) * y0*y0 / (y0d*y0d) );
+		}
+		else{
+			// neonex old
+			x0   = -2.0 * Math.log(1.0-y0) * (1.0-y0) / y0d; 
+			k    = Math.sqrt( x0 * (1.0-y0) / y0d );	
+		}	
+		
+		
+		
+		double m    = x0 - ( Math.log(y0) * y0 / y0d);
+		
+		
+		double pT[] = new double[7];
+		pT[0] = o;
+		pT[1] = r;
+		pT[2] = hoff;
+		pT[3] = c;
+		pT[4] = m;
+		pT[5] = k;
+		pT[6] = x0; // ==b
+		
+		double sum = 0.0;
+		
+		for(int i=0; i<logSig.length; i++)
+			sum += err(logSig[i], logVar[i], pT);
+		
+		return sum;
+	}
+	private double err(double x, double y, double p[]){
+		
+		
+		//if(x<-2.0) return 0.0;
+		//if(y>0.34) return 0.0;
+		
+		double o  = p[0];	// y offset
+		double r  = p[1];	// y scale
+		double ho = p[2];	// x shift
+		double c  = p[3];   // nex shift
+		double m  = p[4];   // nex slope
+		double k  = p[5];   // neo 'slope'
+		double b  = p[6]; 	// blend centre
+		
+		double w  = 1.0/( 1.0 + exp(-30.0*(x-ho-b)) );
+		
+		double ye;
+		
+		
+		
+		
+		
+		if(GA_NEX){
+			//neonex new
+			ye = o + (r-o) * (w*exp(-(x-ho-m)*c) + (1.0-w)*exp(-SQR(x-ho)/(2.0*k*k)) );
+		}
+		else{
+			//neonex old
+			ye = o + (r-o) * (w*exp(-(x-ho-m)*c) + (1.0-w)*(1.0 - exp(-SQR(x-ho)/(2.0*k*k))) );
+		}
+		
+		
+		
+		
+		 
+		
+		
+		//sqr metric  	
+		//return SQR(ye - y);
+		
+		
+		 //logsqr metric
+		//return SQR( Math.log(y/ye));
+		
+		//NeONORM metric
+		return 1.0-exp( -SQR(y-ye) *12.0    ); 
+		
+		
+		
+	}
+	
+	
+	public void	setInput(mTable mTab){
+		logSig = new double[mTab.size];
+		logVar = new double[mTab.size];
+		for(int i=0; i<mTab.size; i++){
+			logSig[i] = Math.log(mTab.data[i].signal);
+			logVar[i] = mTab.data[i].moq; //Math.log(mTab.data[i].moq   );
+		}
+	}
+
+	private double		deriv(double x[], int i){
+		double errB = err(x);
+		
+		double wi = 0.00000001;
+		
+		double x2[] = copy(x);
+		x2[i] += wi;
+				
+		return err(x2)/wi - errB/wi;
+		
+	}
+	private double[]	deriv(double[] x){
+		double ret[] = new double[x.length];
+		for(int i=0; i<x.length; i++)
+			ret[i] = deriv(x, i);
+		
+		ret[0] = 0.0;
+		
+		return ret;
+	}
+	private double[]	copy(double[] x){
+		double[] ret = new double[x.length];
+		for(int i=0; i<x.length; i++)
+			ret[i] = x[i];
+		return ret;
+	}
+	
+	private String		toString(double x[], int d){
+		String ret = new String("["+utils.getDecs(x[0], d, false) );
+		for(int i=1; i<x.length; i++)
+			ret = ret.concat(" ; "+utils.getDecs(x[i], d, false) );
+		ret = ret.concat("]");
+		
+		return ret;
+	}
+	private double[]	mean(double x[], double[] y){
+		double ret[] = new double[x.length];
+		for(int i=0; i<x.length; i++)
+			ret[i] = 0.5*x[i] + 0.5*y[i];
+		return ret;
+	}
+	
+	public double[] fit(	double o, double r, double m,
+						double s, double c,
+						double a, double ka){
+		
+			
+		double x[] = new double[5];
+		
+		
+		double vmin = 1.0;
+		for(int i=0; i<logVar.length; i++)
+			if(vmin>logVar[i])
+				vmin=logVar[i];
+		
+		
+		x[0] =  vmin; //o
+		x[1] =  1.6; //r
+		x[2] =  0.0; //hoff
+		x[3] =  0.5; //y0
+		x[4] = -1.0; //y0d
+		
+		
+			
+		// #####################
+		double der[] = deriv(x);
+		// #####################
+
+		double er[] = utils.mult(der, -1.0);
+		double d[]  = copy(er);
+		
+		double deltanew = utils.scalar(er,er);
+		double delta0   = deltanew;
+		
+		double alpha, deltad, deltaold;
+		
+		double epsilon  = 0.2; //?
+		
+		int n = x.length;
+		int i=0;
+		int j;
+		int k=0;
+		int jmax    = 10;
+		int maxiter = 10;
+		
+		double der2[];
+		double beta;
+		
+		double t1,t2;
+		alpha = 0.0;
+		
+		
+		double errB, errS;
+		double du;
+		double x2[], x3[];
+		
+		int iw;
+		int g;
+		
+		double dlen;
+		
+		double step;
+		
+		double xn[], xf[], xi[];
+		double errN, errF, errI;
+		
+		int l;
+		
+		for(i=0; i<100; i++){
+			
+			// direction of search
+			d = deriv(x);
+								
+			dlen = Math.sqrt(utils.scalar(d,d));
+			d = utils.mult(d, -1.0 / dlen );
+			
+						
+						
+			
+			// base error
+			errB = err(x);
+									
+			System.out.println("-------------"+i+": x="+toString(x,3)  );			
+			System.out.println("d="+toString(d,1)+", errB="+errB+", len="+utils.getDecs(dlen, 0, false) );			
+					
+			step = 0.01;
+			// inner loop
+			
+			x2   = utils.add(x, utils.mult(d , step  ));
+			errS = err(x2);
+			//System.out.println("errS="+utils.getDecs(errS,0,false));
+			
+			
+			j=0;
+			while(errS >= errB && j<10){
+				step = step * 0.5;
+				
+				x2   = utils.add(x, utils.mult(d , step));
+				errS = err(x2);
+				//System.out.println("reducing step to "+step+"--> errS="+utils.getDecs(errS,0,false));
+							
+				j++;
+			}
+			
+			if(j>=10){
+				return x;
+			}
+			
+			if(j>0) System.out.println("reduced step size to "+utils.getDecs(step, 6, false));
+			
+			
+			x    = copy(x2);				
+			errB = errS;
+					
+			j    = 1;
+			x3   = copy(x);
+			
+			while(errS<=errB){
+				x2 = utils.add(x, utils.mult(d , step * (double)j    ));
+							
+				// line search error
+				errS = err(x2);
+				
+				if(errS <= errB){
+					x3 = copy(x2);
+					errB = errS;
+				}
+								
+				//System.out.println("step="+step+" j="+j+", x= "+toString(x,3)+", err="+utils.getDecs(err(x2), 0, false)     );	
+				j++;
+			}
+						
+			x    = copy(x3);
+			errB = err(x);
+			
+			xn   = utils.add(x, utils.mult(d , step * (double)j-1    ));
+			xf   = copy(x3);
+			errN = err(xn);
+			errF = errS; 
+			
+			l=0;
+			/*
+			xi = mean(xn, xf);
+			errI = err(xi);
+			if(errI>errN){  // in between
+				
+			}
+			else{
+				
+				x = copy(xi);
+				l=1;
+			}
+			*/			
+			
+			
+			xn   = copy(x);
+			xf   = copy(x2);
+			errN = errB;
+			errF = errS; 
+			if(l==0){				
+			
+				l=0;
+				while(l<10){
+					xi = mean(xn, xf);
+					errI = err(xi);
+					if(errI>errN && errI>errF){
+						System.out.println("local");
+						break;
+					}
+					if(errI>errN){  // in between
+						errF = errI;
+						xf   = xi;
+						
+					}
+					else{
+						x = copy(xi);
+						break;
+					}
+					l++;
+				
+				}
+			}
+			
+			
+			
+			lasterr = err(x);
+			
+			//System.out.println("x="+toString(x,4)+", err="+errB);
+			
+			
+			System.out.println("for gradient "+i+" performed "+j+" steps.");
+			
+			
+			
+			
+			//x = utils.add(x, utils.mult(der, -alpha));
+		}
+		
+		return x;
+	
+	}
+	
+	public static double neonex(double x, double[] P){
+		double o    = P[0]; // y off
+		double r    = P[1];	// y range
+		double hoff = P[2]; // x shift
+		double y0   = P[3]; // connection point y value
+		double y0d  = P[4]; // slope at y0
+			
+		double c    = -y0d/y0;
+		
+		double x0, k;
+		
+		if(GA_NEX){
+			//NEW
+			x0 = 2.0*Math.log(y0)*y0 / y0d;
+			k    = Math.sqrt( -2.0*Math.log(y0) * y0*y0 / (y0d*y0d) );
+		}
+		else{
+			//OLD
+			x0   = -2.0 * Math.log(1.0-y0) * (1.0-y0) / y0d; 
+			k    = Math.sqrt( x0 * (1.0-y0) / y0d );
+		}
+		
+		
+		double m    = x0 - ( Math.log(y0) * y0 / y0d);
+			
+			
+		double ho = hoff;	
+		double b  = x0; 
+				
+		double w  = 1.0/( 1.0 + Math.exp(-30.0*(x-ho-b)) );
+		double y;
+		
+		if(GA_NEX){
+			//new
+			y = o + (r-o) * (w*exp(-(x-ho-m)*c) + (1.0-w)*exp(-SQR(x-ho)/(2.0*k*k)) );
+		}
+		else{
+			//old
+			y = o + r * (w*Math.exp(-(x-ho-m)*c) + (1.0-w)*(1.0 - Math.exp(-(x-ho)*(x-ho)/(2.0*k*k))) );
+		}
+				
+		return y;
+	}
+	public static void main(String args[]){
+		ace_util.init(null);
+		
+		File path = utils.getUserFile("select source directory", true); //new File("D:\\sebastian\\varMean");
+		
+		File arr[] = path.listFiles();
+		
+		//File res = new File(path, "results");
+		//res.mkdir();
+				
+		File out = utils.getUserFile("select target file", false); //new File(res, "table.txt");
+		
+		FileWriter fwr, fwr2;
+		
+		
+		GA_NEX = utils.request("choose method:", "GANEX", "NeONEX");
+		
+		
+		
+		mTable       mTab;
+		composite_mf cmf;
+		Mvar_estim   mve;
+		
+		double[] x;
+		
+				
+		try{		
+			fwr = new FileWriter(out);		
+			fwr.write("file\to\tr\th_off\ty0\ty0d\terr"+utils.lineend);
+			fwr.close();
+		}catch(Exception e){ System.out.println("can't write to file"); }	
+		
+		
+		File      fback;
+		String    row, buf;
+		bbReader  bbr;
+		
+		
+		for(int i=0; i<arr.length; i++){
+			
+			if(arr[i].isDirectory()) continue;
+			
+			cmf = new composite_mf();
+						
+			cmf.load(arr[i], true, false, false);
+									
+			mTab = new mTable(cmf.F_ma, null, false, cmf, true);
+			
+			mve = new Mvar_estim();
+			mve.setInput(mTab);
+			x= mve.fit(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+			
+			
+			
+			row = new String("NEONEX_PARAMETERS");
+			for(int j=0; j<5; j++)
+				row = row.concat("\t"+utils.getDecs(x[j], 4, false));
+			
+			row = row.concat("\t"+utils.getDecs(mve.lasterr,3,false));
+			row = row.concat(utils.lineend);
+			
+			
+						
+			
+			try{
+				fwr = new FileWriter(out, true);
+							
+				fwr.write(mTab.name);
+				
+				for(int n=0; n<5; n++)
+					fwr.write("\t"+utils.getDecs(x[n],5,false));
+								
+				fwr.write(utils.lineend);
+				fwr.close();
+				System.out.println("--------> completed processing of "+arr[i].getName()+" ("+(i+1)+" of "+arr.length+")");
+				
+			
+				
+				fback = ace_util.getTemp();
+				fwr2 = new FileWriter(fback);
+				
+				bbr = new bbReader(cmf.F_txt);
+			
+				do{
+					buf = bbr.getToNextRET();
+					if(buf==null) break;
+					fwr2.write(buf+utils.lineend);
+				}while(!buf.startsWith("MIXTURE_D_MODEL"));
+				
+				fwr2.write(row);
+												
+				while(true){
+					buf = bbr.getToNextRET();
+					if(buf==null) break;
+					fwr2.write(buf+utils.lineend);
+				}
+				
+				bbr.close();
+				fwr2.close();
+				
+				cmf.F_txt = fback;
+				cmf.save();
+								
+							
+				
+				
+			}catch(Exception e){ System.out.println(e.toString()); }
+		}
+		
+	}
+	
+	
+	
+}
+
+class varDraw{
+	
+	varDraw(){}
+	
+	public static void main(String args[]){
+		
+		ace_util.init(null);
+		
+		File dir = new File("D:\\sebastian\\varMean\\results");
+	
+		File in  = new File(dir, "table.txt");
+		File out = new File(dir, "curves.txt");
+		
+		bbReader bbr = new bbReader(in);
+		
+		FileWriter fwr;
+		
+		try{
+			fwr = new FileWriter(out);
+			
+			for(int i=0; i<120; i++)
+				fwr.write("\t"+utils.getDecs(    (double)i / 10.0 -4.0 , 3, true));
+			fwr.write(utils.lineend);
+			fwr.close();
+		}catch(Exception e){}
+		
+		bbr.getToNextRET();  // headline
+		
+		String buf;
+		String arr[];
+		double P[] = new double[5];
+		
+		do{
+			buf = bbr.getToNextRET();
+			
+			if(buf==null) break;
+			
+				
+			arr = utils.getElementArray(buf);
+			
+			for(int i=0; i<5; i++)
+				P[i] = utils.parseFast(arr[i+1]);
+			
+			try{
+				fwr=new FileWriter(out, true);
+				
+				fwr.write(arr[0]);
+				for(int i=0; i<120; i++)
+					fwr.write("\t"+utils.getDecs( Mvar_estim.neonex(  (double)i / 10.0 -4.0, P), 3, false));
+				fwr.write(utils.lineend);
+				fwr.close();
+			}catch(Exception e2){}
+		}while(true);
+	
+	
+	
+	}
+
+}
